@@ -33,7 +33,6 @@ namespace BenTi
         {
             try
             {
-
                 System.Web.Caching.Cache cache = System.Web.HttpRuntime.Cache;
                 if (cache != null)
                 {
@@ -64,6 +63,225 @@ namespace BenTi
                 MessageBox.Show("异常错误:" + ex.Message, "提示");
             }
         }
+
+        #region 获得块状主题词文本
+
+        /// <summary>
+        /// 获得块状主题词文本
+        /// </summary>
+        /// <param name="filePath"></param>
+        private void GetBlockList(string filePath)
+        {
+            var lines = ReadAllLines(filePath);
+            if (lines.IsNull())
+            {
+                return;
+            }
+            string blockStr = "";
+            percent("获取块状主题词文本:0%");
+            var iNumber = 0;
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (i == (lines.Length / 100) * iNumber || iNumber == 0)
+                {
+                    iNumber++;
+                    percent("获取块状主题词文本:" + iNumber + "%");
+                }
+                var lineStr = lines[i];
+
+                var isPinYin = IsPinYin(lineStr);
+                if (isPinYin || (i + 1 < lines.Length && lineStr == lines[i + 1] && i != 0) || (i != 0 && lines[i - 1].IndexOf("词义注释") != -1))
+                {
+                    blockStr = blockStr.TrimString("\r\n");
+                    BlockList.Add(blockStr);
+                    blockStr = "";
+                }
+                blockStr += lineStr + "\r\n";
+            }
+            if (blockStr != "")
+            {
+                var lastIndex = blockStr.IndexOf("药用动物、植物、矿物");
+                if (lastIndex != -1)
+                {
+                    var lastBlockStr = blockStr.Substring(0, lastIndex).TrimString("\r\n");
+                    BlockList.Add(lastBlockStr);
+                    blockStr = blockStr.Substring(lastIndex);
+                    //最后的前几级  只有名和code
+                    var lastList = blockStr.SplitNoNull("\r\n").ToList();
+                    BlockList2.AddRange(lastList);
+                }
+            }
+            percent("获取块状主题词文本:100%");
+        }
+
+        #endregion
+
+        #region 处理块状主题词文本1
+
+        /// <summary>
+        /// 处理块状主题词文本1
+        /// </summary>
+        private void HandleBlockList()
+        {
+            var iNumber = 0;
+            var iii = 0;
+            foreach (var item in BlockList)
+            {
+                iii++;
+                if (iii == (BlockList.Count / 100) * iNumber)
+                {
+                    iNumber++;
+                    percent("处理块状主题词文本1:" + iNumber + "%");
+                }
+                var lines = item.SplitNoNull("\r\n");
+                if (lines.IsNull())
+                {
+                    continue;
+                }
+                var keyM = new Keyword();
+
+                //获取name py En code
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    var lStr = lines[i].TrimString("\t");
+                    if (i == 0)
+                    {
+                        if (IsPinYin(lStr))
+                        {
+                            keyM.Name_PY = lStr;
+                        }
+                        else
+                        {
+                            keyM.Name = lStr;
+                        }
+                    }
+                    else if (i == 1)
+                    {
+                        if (lines[0] == lines[1])
+                        {
+                            keyM.Name_PY = lStr;
+                        }
+                        if (string.IsNullOrEmpty(keyM.Name))
+                        {
+                            keyM.Name = lStr;
+                        }
+                        else if (Regex.IsMatch(lStr, @"^P[A-Z]{1}(\.[0-9])*?"))
+                        {
+                            keyM.CodeStr = lStr;
+                        }
+                    }
+                    else if (i == 2)
+                    {
+                        if (Regex.IsMatch(lStr, @"^[a-z-\sA-Z]*?$"))
+                        {
+                            keyM.Name_En = lStr;
+                        }
+                        else if (Regex.IsMatch(lStr, @"^P[A-Z]{1}(\.[0-9])*?"))
+                        {
+                            keyM.CodeStr = lStr;
+                        }
+                    }
+                    else if (i == 3)
+                    {
+                        if (Regex.IsMatch(lStr, @"^P[A-Z]{1}(\.[0-9])*?"))
+                        {
+                            keyM.CodeStr = lStr;
+                        }
+                    }
+                }
+                //词义注释
+                keyM.Annotation = "";
+                Match mAnnotation = Regex.Match(item, "词义注释.*?$");
+                if (mAnnotation != null && mAnnotation.Success)
+                {
+                    keyM.Annotation = Regex.Replace(mAnnotation.Value + "", @"词义注释[\w\W]*?", "");
+                }
+                string nowYDSFC = "";
+                string[] subStrs = null;
+                foreach (var YDSFC in "Y,D,S,F,C".Split(','))
+                {
+                    Match msub = Regex.Match(item, YDSFC + @"\t[\s|\S]*?$");
+                    if (msub != null && msub.Success)
+                    {
+                        var strReplace = Regex.Replace(msub.Value + "", @"词义注释[\w\W]*?$", "");
+                        subStrs = strReplace.SplitNoNull("\r\n");
+                        if (strReplace.IndexOf("词义注释") != -1)
+                        {
+                        }
+                        nowYDSFC = YDSFC;
+                        break;
+                    }
+                }
+                if (!subStrs.IsNull())
+                {
+                    foreach (var sStr in subStrs)
+                    {
+                        var newsStr = sStr.TrimString("\t");
+                        nowYDSFC = newsStr.IndexOf("Y\t") != -1 ? "Y" :
+                            newsStr.IndexOf("D\t") != -1 ? "D" :
+                            newsStr.IndexOf("S\t") != -1 ? "S" :
+                            newsStr.IndexOf("F\t") != -1 ? "F" :
+                            newsStr.IndexOf("C\t") != -1 ? "C" : nowYDSFC;
+                        if (newsStr.IndexOf(nowYDSFC) != -1)
+                        {
+                            newsStr = newsStr.TrimStart(nowYDSFC.ToCharArray());
+                        }
+                        newsStr = newsStr.TrimString("\t");
+                        var subM = new Keyword_Sub()
+                        {
+                            Type = nowYDSFC,
+                            Name = newsStr,
+                        };
+                        if (newsStr.Length > 50)
+                        {
+                        }
+                        keyM.Subs.Add(subM);
+                        SubList.Add(subM);
+                    }
+                }
+                //Console.WriteLine(keyM.ToString());
+                KeywordList.Add(keyM);
+            }
+        }
+
+        #endregion
+
+        #region 处理块状主题词文本2
+
+        /// <summary>
+        /// 处理块状主题词文本2
+        /// </summary>
+        private void HandleBlockList2()
+        {
+            var iNumber = 0;
+            var iii = 0;
+            foreach (var item in BlockList2)
+            {
+                iii++;
+                if (iii == (BlockList2.Count / 100) * iNumber || iNumber == 0)
+                {
+                    iNumber++;
+                    percent("处理块状主题词文本2:" + iNumber + "%");
+                }
+                var lStr = item.TrimString("\t");
+                var strs = lStr.SplitNoNull("\t");
+                if (strs.IsNull() || strs.Length != 2)
+                {
+                    continue;
+                }
+                var keyM = new Keyword()
+                {
+                    Name = strs[0],
+                    CodeStr = strs[1]
+                };
+                //Console.WriteLine(keyM.ToString());
+                KeywordList.Add(keyM);
+            }
+        }
+
+        #endregion
+
+        #region 添加数据库
 
         /// <summary>
         /// 添加数据库
@@ -167,7 +385,6 @@ namespace BenTi
                             if ((subject_subM.Subject + "").Length > 50 || (subject_subM.Subject + "") == "" ||
                                 subject_subM.Subject.IndexOf("PB.010.020.005.178") != -1)
                             {
-
                             }
                             subjectList.Add(subject_subM);
                         }
@@ -235,15 +452,12 @@ namespace BenTi
                     }
                     if (subjectM.Subject.IndexOf("PB.010.020.005.178") != -1)
                     {
-
                     }
                 }
                 catch (Exception)
                 {
-
                     throw;
                 }
-
             }
             percent("添加数据库:100%");
 
@@ -257,212 +471,9 @@ namespace BenTi
             }
         }
 
-        /// <summary>
-        /// 处理块状主题词文本1
-        /// </summary>
-        private void HandleBlockList()
-        {
-            var iNumber = 0;
-            var iii = 0;
-            foreach (var item in BlockList)
-            {
-                iii++;
-                if (iii == (BlockList.Count / 100) * iNumber)
-                {
-                    iNumber++;
-                    percent("处理块状主题词文本1:" + iNumber + "%");
-                }
-                var lines = item.SplitNoNull("\r\n");
-                if (lines.IsNull())
-                {
-                    continue;
-                }
-                var keyM = new Keyword();
+        #endregion
 
-                //获取name py En code
-                for (int i = 0; i < lines.Length; i++)
-                {
-                    var lStr = lines[i].TrimString("\t");
-                    if (i == 0)
-                    {
-                        if (IsPinYin(lStr))
-                        {
-                            keyM.Name_PY = lStr;
-                        }
-                        else
-                        {
-                            keyM.Name = lStr;
-                        }
-                    }
-                    else if (i == 1)
-                    {
-                        if (lines[0] == lines[1])
-                        {
-                            keyM.Name_PY = lStr;
-                        }
-                        if (string.IsNullOrEmpty(keyM.Name))
-                        {
-                            keyM.Name = lStr;
-                        }
-                        else if (Regex.IsMatch(lStr, @"^P[A-Z]{1}(\.[0-9])*?"))
-                        {
-                            keyM.CodeStr = lStr;
-                        }
-                    }
-                    else if (i == 2)
-                    {
-                        if (Regex.IsMatch(lStr, @"^[a-z-\sA-Z]*?$"))
-                        {
-                            keyM.Name_En = lStr;
-                        }
-                        else if (Regex.IsMatch(lStr, @"^P[A-Z]{1}(\.[0-9])*?"))
-                        {
-                            keyM.CodeStr = lStr;
-                        }
-                    }
-                    else if (i == 3)
-                    {
-                        if (Regex.IsMatch(lStr, @"^P[A-Z]{1}(\.[0-9])*?"))
-                        {
-                            keyM.CodeStr = lStr;
-                        }
-                    }
-                }
-                //词义注释
-                keyM.Annotation = "";
-                Match mAnnotation = Regex.Match(item, "词义注释.*?$");
-                if (mAnnotation != null && mAnnotation.Success)
-                {
-                    keyM.Annotation = Regex.Replace(mAnnotation.Value + "", @"词义注释[\w\W]*?", "");
-                }
-                string nowYDSFC = "";
-                string[] subStrs = null;
-                foreach (var YDSFC in "Y,D,S,F,C".Split(','))
-                {
-                    Match msub = Regex.Match(item, YDSFC + @"\t[\s|\S]*?$");
-                    if (msub != null && msub.Success)
-                    {
-                        var strReplace = Regex.Replace(msub.Value + "", @"词义注释[\w\W]*?$", "");
-                        subStrs = strReplace.SplitNoNull("\r\n");
-                        if (strReplace.IndexOf("词义注释") != -1)
-                        {
-
-                        }
-                        nowYDSFC = YDSFC;
-                        break;
-                    }
-                }
-                if (!subStrs.IsNull())
-                {
-                    foreach (var sStr in subStrs)
-                    {
-                        var newsStr = sStr.TrimString("\t");
-                        nowYDSFC = newsStr.IndexOf("Y\t") != -1 ? "Y" :
-                            newsStr.IndexOf("D\t") != -1 ? "D" :
-                            newsStr.IndexOf("S\t") != -1 ? "S" :
-                            newsStr.IndexOf("F\t") != -1 ? "F" :
-                            newsStr.IndexOf("C\t") != -1 ? "C" : nowYDSFC;
-                        if (newsStr.IndexOf(nowYDSFC) != -1)
-                        {
-                            newsStr = newsStr.TrimStart(nowYDSFC.ToCharArray());
-                        }
-                        newsStr = newsStr.TrimString("\t");
-                        var subM = new Keyword_Sub()
-                        {
-                            Type = nowYDSFC,
-                            Name = newsStr,
-                        };
-                        if (newsStr.Length > 50)
-                        {
-
-                        }
-                        keyM.Subs.Add(subM);
-                        SubList.Add(subM);
-                    }
-                }
-                //Console.WriteLine(keyM.ToString());
-                KeywordList.Add(keyM);
-            }
-        }
-
-        /// <summary>
-        /// 处理块状主题词文本2
-        /// </summary>
-        private void HandleBlockList2()
-        {
-            var iNumber = 0;
-            var iii = 0;
-            foreach (var item in BlockList2)
-            {
-                iii++;
-                if (iii == (BlockList2.Count / 100) * iNumber || iNumber == 0)
-                {
-                    iNumber++;
-                    percent("处理块状主题词文本2:" + iNumber + "%");
-                }
-                var lStr = item.TrimString("\t");
-                var strs = lStr.SplitNoNull("\t");
-                if (strs.IsNull() || strs.Length != 2)
-                {
-                    continue;
-                }
-                var keyM = new Keyword()
-                {
-                    Name = strs[0],
-                    CodeStr = strs[1]
-                };
-                //Console.WriteLine(keyM.ToString());
-                KeywordList.Add(keyM);
-            }
-        }
-
-        /// <summary>
-        /// 获得块状主题词文本
-        /// </summary>
-        /// <param name="filePath"></param>
-        private void GetBlockList(string filePath)
-        {
-            var lines = ReadAllLines(filePath);
-            if (lines.IsNull())
-            {
-                return;
-            }
-            string blockStr = "";
-            percent("获取块状主题词文本:0%");
-            var iNumber = 0;
-            for (int i = 0; i < lines.Length; i++)
-            {
-                if (i == (lines.Length / 100) * iNumber || iNumber == 0)
-                {
-                    iNumber++;
-                    percent("获取块状主题词文本:" + iNumber + "%");
-                }
-                var lineStr = lines[i];
-
-                var isPinYin = IsPinYin(lineStr);
-                if (isPinYin || (i + 1 < lines.Length && lineStr == lines[i + 1] && i != 0) || (i != 0 && lines[i - 1].IndexOf("词义注释") != -1))
-                {
-                    blockStr = blockStr.TrimString("\r\n");
-                    BlockList.Add(blockStr);
-                    blockStr = "";
-                }
-                blockStr += lineStr + "\r\n";
-            }
-            if (blockStr != "")
-            {
-                var lastIndex = blockStr.IndexOf("药用动物、植物、矿物");
-                if (lastIndex != -1)
-                {
-                    var lastBlockStr = blockStr.Substring(0, lastIndex).TrimString("\r\n");
-                    BlockList.Add(lastBlockStr);
-                    blockStr = blockStr.Substring(lastIndex);
-                    //最后的前几级  只有名和code
-                    var lastList = blockStr.SplitNoNull("\r\n").ToList();
-                    BlockList2.AddRange(lastList);
-                }
-            }
-            percent("获取块状主题词文本:100%");
-        }
+        #region 读取文本所有行文本
 
         /// <summary>
         /// 读取文本所有行文本
@@ -481,6 +492,10 @@ namespace BenTi
             }
             return null;
         }
+
+        #endregion
+
+        #region 判断是否是拼音
 
         /// <summary>
         /// 判断是否是拼音
@@ -512,10 +527,13 @@ namespace BenTi
             }
             if (pyCount > 1)
             {
-
             }
             return pyCount > 0;
         }
+
+        #endregion
+
+        #region 转化拼音
 
         /// <summary>
         /// 转化拼音
@@ -542,5 +560,7 @@ namespace BenTi
             }
             return reStr.Trim(' ');
         }
+
+        #endregion
     }
 }
