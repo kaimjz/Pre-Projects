@@ -15,9 +15,12 @@ namespace BenTi
         private ReadKeyword.LoadPercent percent;
         private string FilePath = string.Empty;
         private List<string> BlockList = new List<string>();//块状主题词文本
-        private List<string> BlockList2 = new List<string>();//块状主题词文本2
+        private List<string> BlockList2 = new List<string>();//块状主题词文本-目录
+
         private List<Keyword> KeywordList = new List<Keyword>();
-        private List<Keyword_Sub> SubList = new List<Keyword_Sub>();
+        private string pText = "";
+        private int pNumber = 0;
+        private int iNumber = 0;
 
         public ReadTxt(string filePath, ReadKeyword.LoadPercent p)
         {
@@ -25,38 +28,23 @@ namespace BenTi
             FilePath = filePath;
         }
 
+        #region 读取上册内容
+
         /// <summary>
-        /// 执行
+        /// 读取上册内容
         /// </summary>
         /// <param name="filePath"></param>
-        public void Execute()
+        public void ReadContent()
         {
             try
             {
-                System.Web.Caching.Cache cache = System.Web.HttpRuntime.Cache;
-                if (cache != null)
+                if (BlockList.Count <= 0)
                 {
-                    var block = cache.Get("BlockList") as List<string>;
-                    var block2 = cache.Get("BlockList2") as List<string>;
-                    if (block != null && block2 != null)
-                    {
-                        BlockList.AddRange(block);
-                        BlockList2.AddRange(block2);
-                    }
-                    else
-                    {
-                        percent("获得块状主题词文本:0%");
-                        GetBlockList(FilePath);//获得块状主题词文本
-                        cache.Insert("BlockList", BlockList);
-                        cache.Insert("BlockList2", BlockList2);
-                    }
+                    pText = "获得上册块状主题词文本:";
+                    GetBlockList(FilePath);//获得上册块状主题词文本
                 }
-                percent("处理块状主题词文本1:0%");
+                pText = "处理上册块状主题词文本:";
                 HandleBlockList();//处理1
-                percent("处理块状主题词文本2:0%");
-                HandleBlockList2();//处理2
-                percent("添加数据库:0%");
-                InsertDB();//添加数据库
             }
             catch (Exception ex)
             {
@@ -64,75 +52,60 @@ namespace BenTi
             }
         }
 
-        #region 获得块状主题词文本
+        #endregion
+
+        #region 获得上册块状主题词文本
 
         /// <summary>
-        /// 获得块状主题词文本
+        /// 获得上册块状主题词文本
         /// </summary>
         /// <param name="filePath"></param>
         private void GetBlockList(string filePath)
         {
-            var lines = ReadAllLines(filePath);
+            var lines = ReadAllLines(filePath, false);
             if (lines.IsNull())
             {
                 return;
             }
             string blockStr = "";
-            percent("获取块状主题词文本:0%");
-            var iNumber = 0;
             for (int i = 0; i < lines.Length; i++)
             {
-                if (i == (lines.Length / 100) * iNumber || iNumber == 0)
-                {
-                    iNumber++;
-                    percent("获取块状主题词文本:" + iNumber + "%");
-                }
+                WritePercent(i, lines.Length);
                 var lineStr = lines[i];
 
                 var isPinYin = IsPinYin(lineStr);
+                if (lineStr == "Freund zuo ji" || lineStr == "PK.020.010.115"||lineStr == "zhao xue min")
+                {
+
+                }
                 if (isPinYin || (i + 1 < lines.Length && lineStr == lines[i + 1] && i != 0) || (i != 0 && lines[i - 1].IndexOf("词义注释") != -1))
+                //if (lineStr.Trim() == "——")
                 {
                     blockStr = blockStr.TrimString("\r\n");
                     BlockList.Add(blockStr);
                     blockStr = "";
+                    //continue;
                 }
                 blockStr += lineStr + "\r\n";
             }
             if (blockStr != "")
             {
-                var lastIndex = blockStr.IndexOf("药用动物、植物、矿物");
-                if (lastIndex != -1)
-                {
-                    var lastBlockStr = blockStr.Substring(0, lastIndex).TrimString("\r\n");
-                    BlockList.Add(lastBlockStr);
-                    blockStr = blockStr.Substring(lastIndex);
-                    //最后的前几级  只有名和code
-                    var lastList = blockStr.SplitNoNull("\r\n").ToList();
-                    BlockList2.AddRange(lastList);
-                }
             }
-            percent("获取块状主题词文本:100%");
         }
 
         #endregion
 
-        #region 处理块状主题词文本1
+        #region 处理上册块状主题词文本
 
         /// <summary>
-        /// 处理块状主题词文本1
+        /// 处理上册块状主题词文本
         /// </summary>
         private void HandleBlockList()
         {
-            var iNumber = 0;
-            var iii = 0;
-            foreach (var item in BlockList)
+            for (int i = 0; i < BlockList.Count; i++)
             {
-                iii++;
-                if (iii == (BlockList.Count / 100) * iNumber)
-                {
-                    iNumber++;
-                    percent("处理块状主题词文本1:" + iNumber + "%");
-                }
+                WritePercent(i, BlockList.Count);
+                var item = BlockList[i];
                 var lines = item.SplitNoNull("\r\n");
                 if (lines.IsNull())
                 {
@@ -141,12 +114,17 @@ namespace BenTi
                 var keyM = new Keyword();
 
                 //获取name py En code
-                for (int i = 0; i < lines.Length; i++)
+                for (int j = 0; j < lines.Length; j++)
                 {
-                    var lStr = lines[i].TrimString("\t");
-                    if (i == 0)
+                    var lStr = lines[j].TrimString("\t");
+                    var regexNum = @"^P[A-Z]{1}(\.[0-9])*?";
+                    if (lStr == "Freund zuo ji" || lStr == "赵学敏" || lStr == "PK.020.010.115")
                     {
-                        if (IsPinYin(lStr))
+
+                    }
+                    if (j == 0)
+                    {
+                        if (IsPinYin(lStr) || !Regex.IsMatch(lStr, @"[\u4e00-\u9fbb]+$"))
                         {
                             keyM.Name_PY = lStr;
                         }
@@ -155,7 +133,7 @@ namespace BenTi
                             keyM.Name = lStr;
                         }
                     }
-                    else if (i == 1)
+                    else if (j == 1)
                     {
                         if (lines[0] == lines[1])
                         {
@@ -165,25 +143,25 @@ namespace BenTi
                         {
                             keyM.Name = lStr;
                         }
-                        else if (Regex.IsMatch(lStr, @"^P[A-Z]{1}(\.[0-9])*?"))
+                        else if (Regex.IsMatch(lStr, regexNum))
                         {
                             keyM.CodeStr = lStr;
                         }
                     }
-                    else if (i == 2)
+                    else if (j == 2)
                     {
-                        if (Regex.IsMatch(lStr, @"^[a-z-\sA-Z]*?$"))
+                        if (Regex.IsMatch(lStr.Replace("＇", " "), @"^[a-z-\sA-Z]*?$"))
                         {
                             keyM.Name_En = lStr;
                         }
-                        else if (Regex.IsMatch(lStr, @"^P[A-Z]{1}(\.[0-9])*?"))
+                        else if (Regex.IsMatch(lStr, regexNum))
                         {
                             keyM.CodeStr = lStr;
                         }
                     }
-                    else if (i == 3)
+                    else if (j == 3)
                     {
-                        if (Regex.IsMatch(lStr, @"^P[A-Z]{1}(\.[0-9])*?"))
+                        if (Regex.IsMatch(lStr, regexNum))
                         {
                             keyM.CodeStr = lStr;
                         }
@@ -236,33 +214,70 @@ namespace BenTi
                         {
                         }
                         keyM.Subs.Add(subM);
-                        SubList.Add(subM);
                     }
                 }
-                //Console.WriteLine(keyM.ToString());
-                KeywordList.Add(keyM);
+                var indexNum = KeywordList.FindIndex(p => p.Name == keyM.Name || p.Name == keyM.Name.Replace(" ", ""));
+                if (indexNum != -1)
+                {
+                    KeywordList[indexNum] = new Keyword()
+                    {
+                        Name = KeywordList[indexNum].Name,
+                        Name_En = keyM.Name_En,
+                        Name_PY = keyM.Name_PY,
+                        Annotation = keyM.Annotation,
+                        Codes = KeywordList[indexNum].Codes,
+                        Subs = keyM.Subs,
+                        //ID=""
+                    };
+                }
+                else
+                {
+                    KeywordList.Add(keyM);
+                }
             }
         }
 
         #endregion
 
-        #region 处理块状主题词文本2
+        #region 读取下册内容
 
         /// <summary>
-        /// 处理块状主题词文本2
+        /// 读取下册内容
+        /// </summary>
+        public void ReadCatalog()
+        {
+            try
+            {
+                if (BlockList2.Count <= 0)
+                {
+                    pText = "获得下册块状主题词文本:";
+                    var lastList = ReadAllLines(FilePath, true).ToList();
+                    BlockList2.AddRange(lastList);
+                    WritePercent(1, 1);
+                }
+                pText = "处理下册块状主题词文本:";
+                HandleBlockList2();//处理2
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("异常错误:" + ex.Message, "提示");
+            }
+        }
+
+        #endregion
+
+        #region 处理下册块状主题词文本
+
+        /// <summary>
+        /// 处理下册块状主题词文本
         /// </summary>
         private void HandleBlockList2()
         {
-            var iNumber = 0;
-            var iii = 0;
-            foreach (var item in BlockList2)
+            KeywordList.Clear();
+            for (int i = 0; i < BlockList2.Count; i++)
             {
-                iii++;
-                if (iii == (BlockList2.Count / 100) * iNumber || iNumber == 0)
-                {
-                    iNumber++;
-                    percent("处理块状主题词文本2:" + iNumber + "%");
-                }
+                WritePercent(i, BlockList2.Count);
+                var item = BlockList2[i];
                 var lStr = item.TrimString("\t");
                 var strs = lStr.SplitNoNull("\t");
                 if (strs.IsNull() || strs.Length != 2)
@@ -274,20 +289,20 @@ namespace BenTi
                     Name = strs[0],
                     CodeStr = strs[1]
                 };
-                //Console.WriteLine(keyM.ToString());
                 KeywordList.Add(keyM);
             }
         }
 
         #endregion
 
-        #region 添加数据库
+        #region 处理数据库添加集合
 
         /// <summary>
-        /// 添加数据库
+        /// 处理数据库添加集合
         /// </summary>
-        private void InsertDB()
+        public void InsertDB()
         {
+            pText = "处理数据库添加集合:";
             var subjectList = new List<Xml_Subject_Temp>();//主题词列表
 
             var subattrList = new List<Xml_SubAttribute_Temp>();//词间关系
@@ -298,27 +313,25 @@ namespace BenTi
             var thesaurusM = new Xml_Thesaurus()
             {
                 ID = Guid.NewGuid(),
-                Thesauri = "中国药学主题词表",
+                Thesauri = "中国药学主题词表" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
                 CoverPath = "",
                 CreateDate = DateTime.Now,
                 CreateUserID = Guid.NewGuid()
             };
 
-            var iNumber = 0;
-            var iii = 0;
-            foreach (var item in KeywordList)
+            for (int i = 0; i < KeywordList.Count; i++)
             {
                 try
                 {
-                    iii++;
-                    if (iii == (KeywordList.Count / 100) * iNumber || iNumber == 0)
-                    {
-                        iNumber++;
-                        percent("添加数据库:" + iNumber + "%");
-                    }
+                    WritePercent(i, KeywordList.Count);
+                    var item = KeywordList[i];
                     if (string.IsNullOrEmpty(item.Name))
                     {
                         continue;
+                    }
+                    if (item.Name == "赵学敏"|| item.Name == "PK.020.010.115")
+                    {
+
                     }
                     item.Name_PY = string.IsNullOrEmpty(item.Name_PY) ? ToPy(item.Name) : item.Name_PY;
                     var pyIndex = string.IsNullOrEmpty(item.Name_PY) ? "" : item.Name_PY.Substring(0, 1);
@@ -450,17 +463,13 @@ namespace BenTi
                         };
                         subTreeList.Add(subTreeM);
                     }
-                    if (subjectM.Subject.IndexOf("PB.010.020.005.178") != -1)
-                    {
-                    }
                 }
                 catch (Exception)
                 {
                     throw;
                 }
             }
-            percent("添加数据库:100%");
-
+            pText = "添加数据库ing...";
             if (new InsertDB().InsertData(thesaurusM, subjectList, subattrList, treeDicList, subTreeList))
             {
                 percent("提取成功");
@@ -469,23 +478,34 @@ namespace BenTi
             {
                 percent("提取失败");
             }
+            WritePercent(2, 2);
         }
 
         #endregion
 
-        #region 读取文本所有行文本
+        #region 读取文本行文本
 
         /// <summary>
-        /// 读取文本所有行文本
+        /// 读取文本行文本
         /// </summary>
         /// <param name="filePath"></param>
+        /// <param name="IsCatalog">是否获取目录文本行</param>
         /// <returns></returns>
-        private string[] ReadAllLines(string filePath)
+        private string[] ReadAllLines(string filePath, bool IsCatalog)
         {
             try
             {
-                var lines = File.ReadAllLines(filePath);
-                return lines;
+                //var lines = File.ReadAllLines(filePath);
+                //return lines;
+                var allText = File.ReadAllText(filePath);
+                if (IsCatalog)
+                {
+                    return allText.Substring(allText.IndexOf("药用动物、植物、矿物\tPA")).SplitNoNull("\r\n");
+                }
+                else
+                {
+                    return allText.Substring(0, allText.IndexOf("药用动物、植物、矿物\tPA")).SplitNoNull("\r\n");
+                }
             }
             catch (Exception ex)
             {
@@ -505,7 +525,7 @@ namespace BenTi
         private bool IsPinYin(string str)
         {
             str = str.Replace("ü", "u").Replace("-", "");
-            if (Regex.IsMatch(str, @"^[A-Z]{1}[a-z\s]{1,}$|^[A-Z]{2,}$")
+            if (Regex.IsMatch(str, @"^[A-Z]{1}[a-z\sA-Z]{1,}$|^[A-Z]{2,}$")
                 && str != "D  jiu shi suan qing jia"
                 && str != "wei C yin qiao pian" || str == "Vitamin C yin qiao tablet")
             {
@@ -559,6 +579,33 @@ namespace BenTi
                 }
             }
             return reStr.Trim(' ');
+        }
+
+        #endregion
+
+        #region 打印百分比
+
+        /// <summary>
+        /// 打印百分比
+        /// </summary>
+        /// <param name="i"></param>
+        /// <param name="iCount"></param>
+        private void WritePercent(int i, int iCount)
+        {
+            if (i == 0)
+            {
+                iNumber = 0;
+                pNumber = iCount / 100;
+            }
+            if (i == iCount)
+            {
+                percent(pText + "100%");
+            }
+            else if (i == pNumber * iNumber)
+            {
+                percent(pText + iNumber + "%");
+                iNumber++;
+            }
         }
 
         #endregion

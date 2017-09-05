@@ -92,6 +92,7 @@
       <AutoGen>True</AutoGen>
       <DependentUpon>Resources.resx</DependentUpon>
     </Compile>
+    <None Include="bin\Debug\中国医药学旧版\中国医药学旧版.zip" />
     <None Include="bin\Debug\中国医药学最新版\中国医药学最新版.rar" />
     <None Include="Properties\Settings.settings">
       <Generator>SettingsSingleFileGenerator</Generator>
@@ -110,6 +111,8 @@
     </None>
   </ItemGroup>
   <ItemGroup>
+    <Content Include="bin\Debug\中国医药学旧版\中国药学主题词表.txt" />
+    <Content Include="bin\Debug\中国医药学旧版\主题词表部分.txt" />
     <Content Include="bin\Debug\中国医药学最新版\2166-2266.txt" />
     <Content Include="bin\Debug\中国医药学最新版\中国药学主题词表（上）（纸书页码901-1000）.txt" />
   </ItemGroup>

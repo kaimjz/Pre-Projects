@@ -15,7 +15,7 @@ namespace BenTi
     public partial class ReadKeyword : Form
     {
         public delegate void LoadPercent(string str);
-
+        private ReadTxt Reader = null;
         public ReadKeyword()
         {
             InitializeComponent();
@@ -28,27 +28,52 @@ namespace BenTi
                 DefaultExt = ".txt",
                 InitialDirectory = Directory.GetParent(Application.ExecutablePath).FullName
             };
-            if (BtnStart.Enabled && openDialog.ShowDialog() == DialogResult.OK)
+            if (BtnCatalog.Enabled && openDialog.ShowDialog() == DialogResult.OK)
             {
                 TbxPath.Text = openDialog.FileName;
+                Reader = new ReadTxt(TbxPath.Text, new LoadPercent(Load_Per));
             }
         }
 
-        private void BtnStart_Click(object sender, EventArgs e)
+
+        public void Load_Per(string str)
+        {
+            Invoke(new Action(() =>
+            {
+                LblPercent.Text = str;
+            }));
+        }
+
+        private void BtnCatalog_Click(object sender, EventArgs e)
         {
             if (!File.Exists(TbxPath.Text))
             {
                 MessageBox.Show("路径为空或文件不存在", "提示");
                 return;
             }
-            BtnStart.Enabled = false;
+            BtnCatalog.Enabled = false;
             var th = new Thread(new ThreadStart(() =>
             {
-                var rt = new ReadTxt(TbxPath.Text, new LoadPercent(Load_Per));
-                rt.Execute();
+                Reader.ReadCatalog();
                 Invoke(new Action(() =>
                 {
-                    BtnStart.Enabled = true;
+                    BtnContent.Enabled = true;
+                }));
+            }))
+            {
+                IsBackground = true
+            };
+            th.Start();
+        }
+        private void BtnContent_Click(object sender, EventArgs e)
+        {
+            BtnContent.Enabled = false;
+            var th = new Thread(new ThreadStart(() =>
+            {
+                Reader.ReadContent();
+                Invoke(new Action(() =>
+                {
+                    BtnCommit.Enabled = true;
                 }));
             }))
             {
@@ -57,12 +82,27 @@ namespace BenTi
             th.Start();
         }
 
-        public void Load_Per(string str)
+        private void BtnCommit_Click(object sender, EventArgs e)
         {
-            Invoke(new Action(() =>
+            BtnCommit.Enabled = false;
+            var th = new Thread(new ThreadStart(() =>
             {
-                LblPercent.Text = str;
-            }));
+                Reader.InsertDB();
+                Invoke(new Action(() =>
+                {
+                    BtnCatalog.Enabled = true;
+                }));
+            }))
+            {
+                IsBackground = true
+            };
+            th.Start();
+        }
+
+        private void ReadKeyword_Load(object sender, EventArgs e)
+        {
+            BtnContent.Enabled = false;
+            BtnCommit.Enabled = false;
         }
     }
 }
